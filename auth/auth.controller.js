@@ -1,7 +1,7 @@
 const asyncHandler = require("../common/middlewares/asyncHandler");
 const authService = require("./auth.service");
 
-exports.register = asyncHandler(async (req, res) => {
+exports.registerUser = asyncHandler(async (req, res) => {
   const user = await authService.registerUser(req.body);
 
   res.status(201).json({
@@ -11,7 +11,7 @@ exports.register = asyncHandler(async (req, res) => {
   });
 });
 
-exports.login = asyncHandler(async (req, res) => {
+exports.loginUser = asyncHandler(async (req, res) => {
   const { accessToken, refreshToken } = await authService.loginUser(
     req,
     req.body
