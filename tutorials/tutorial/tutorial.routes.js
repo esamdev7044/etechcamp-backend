@@ -1,76 +1,82 @@
 const express = require("express");
 const router = express.Router();
 
-const { authMiddleware } = require("../../common/middlewares/auth.middleware");
+const { authenticate } = require("../../common/middlewares/authenticate");
 const {
   globalLimiter,
   sensitiveLimiter,
 } = require("../../common/middlewares/rateLimiter");
-const { validate } = require("../../common/middlewares/validator");
+const {
+  validate,
+  validateParams,
+  validateQuery,
+} = require("../../common/middlewares/validator");
+const { authorize } = require("../../common/middlewares/authorize");
 
 const tutorialsController = require("./tutorial.controller");
 const tutorialValidation = require("./tutorial.validation");
 
 router.use(globalLimiter);
 
+router.post(
+  "/",
+  authenticate,
+  sensitiveLimiter,
+  authorize("admin"),
+  validate(tutorialValidation.createTutorialSchema),
+  tutorialsController.createTutorial,
+);
+
+router.post(
+  "/:id/translations",
+  authenticate,
+  sensitiveLimiter,
+  authorize("admin"),
+  validateParams(tutorialValidation.idParamSchema),
+  validate(tutorialValidation.createTranslationSchema),
+  tutorialsController.createTutorialTranslation,
+);
+
 router.get(
   "/",
-  validate(tutorialValidation.getTutorialsSchema),
+  validateQuery(tutorialValidation.langQuerySchema),
   tutorialsController.getAllTutorialsByLang,
 );
 
 router.get(
   "/:id",
-  authMiddleware,
-  validate(tutorialValidation.getTutorialByIdSchema),
-  tutorialsController.getTutorialById,
-);
-
-router.get(
-  "/:id/full",
-  authMiddleware,
-  validate(tutorialValidation.getTutorialByIdSchema),
+  validateParams(tutorialValidation.idParamSchema),
+  validateQuery(tutorialValidation.langQuerySchema),
   tutorialsController.getFullTutorialById,
-);
-
-router.post(
-  "/",
-  authMiddleware,
-  sensitiveLimiter,
-  validate(tutorialValidation.createTutorialSchema),
-  tutorialsController.createTutorial,
 );
 
 router.patch(
   "/:id",
-  authMiddleware,
+  authenticate,
   sensitiveLimiter,
+  authorize("admin"),
   validate(tutorialValidation.updateTutorialSchema),
+  validateParams(tutorialValidation.idParamSchema),
   tutorialsController.updateTutorial,
+);
+
+router.patch(
+  "/:id/translations",
+  authenticate,
+  sensitiveLimiter,
+  authorize("admin"),
+  validate(tutorialValidation.translationSchema),
+  tutorialsController.updateTutorialTranslation,
 );
 
 router.delete(
   "/:id",
-  authMiddleware,
+  authenticate,
   sensitiveLimiter,
+  authorize("admin"),
   validate(tutorialValidation.removeTutorialSchema),
+  validateParams(tutorialValidation.idParamSchema),
   tutorialsController.removeTutorial,
-);
-
-router.put(
-  "/:id/translations/:lang",
-  authMiddleware,
-  sensitiveLimiter,
-  validate(tutorialValidation.translationSchema),
-  tutorialsController.createOrUpdateTranslation,
-);
-
-router.post(
-  "/:id/translations",
-  authMiddleware,
-  sensitiveLimiter,
-  validate(tutorialValidation.createTranslationSchema),
-  tutorialsController.createOrUpdateTranslation,
 );
 
 module.exports = router;

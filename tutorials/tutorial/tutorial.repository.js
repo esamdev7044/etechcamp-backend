@@ -1,15 +1,13 @@
-const pool = require("../../config/db");
-
-exports.findBySlug = async (client, slug) => {
-  const res = await client.query(
-    "SELECT 1 FROM esmatechcamp.tutorials WHERE slug = $1",
+exports.checkTutorialSlug = async ({ db, slug }) => {
+  const res = await db.query(
+    "SELECT slug FROM esmatechcamp.tutorials WHERE slug = $1",
     [slug],
   );
   return res.rowCount > 0;
 };
 
-exports.create = async (client, { slug, logo }) => {
-  const res = await client.query(
+exports.createTutorial = async ({ db, slug, logo }) => {
+  const res = await db.query(
     `INSERT INTO esmatechcamp.tutorials (slug, logo)
      VALUES ($1, $2)
      RETURNING *`,
@@ -18,14 +16,14 @@ exports.create = async (client, { slug, logo }) => {
   return res.rows[0];
 };
 
-exports.upsertTranslation = async (
-  tutorial_id,
+exports.upsertTutorialTranslation = async ({
+  db,
+  tutorialId,
   lang_code,
   title,
   description,
-  client,
-) => {
-  const res = await client.query(
+}) => {
+  const res = await db.query(
     `INSERT INTO esmatechcamp.tutorials_translation
      (tutorial_id, lang_code, title, description)
      VALUES ($1, $2, $3, $4)
@@ -35,109 +33,40 @@ exports.upsertTranslation = async (
        description = EXCLUDED.description,
        updated_at = NOW()
      RETURNING *`,
-    [tutorial_id, lang_code, title, description],
+    [tutorialId, lang_code, title, description],
   );
   return res.rows[0];
 };
 
-exports.findAllByLanguage = async (lang) => {
-  const { rows } = await pool.query(
-    `SELECT 
-        t.id,
-        t.slug,
-        t.logo,
-        tt.title,
-        tt.description
-     FROM esmatechcamp.tutorials t
-     JOIN esmatechcamp.tutorials_translation tt 
-       ON t.id = tt.tutorial_id
-     WHERE tt.lang_code = $1
-       AND t.is_deleted = false
-     ORDER BY t.created_at ASC`,
-    [lang],
-  );
-  return rows;
-};
-
-exports.findByIdAndLang = async (id, lang) => {
-  const { rows } = await pool.query(
-    `SELECT 
-        t.id,
-        t.slug,
-        t.logo,
-        tt.title,
-        tt.description
-     FROM esmatechcamp.tutorials t
-     JOIN esmatechcamp.tutorials_translation tt 
-       ON t.id = tt.tutorial_id
-     WHERE t.id = $1
-       AND tt.lang_code = $2
-       AND t.is_deleted = false`,
-    [id, lang],
-  );
-  return rows[0] || null;
-};
-
-exports.updateTutorialById = async (id, updates) => {
-  const fields = [];
+exports.findAllTutorials = async ({ db, lang }) => {
+  let query = `SELECT t.id, t.slug, t.logo, tt.title, tt.description
+    FROM esmatechcamp.tutorials t
+    LEFT JOIN esmatechcamp.tutorials_translation tt
+      ON t.id = tt.tutorial_id
+    WHERE t.is_deleted = false`;
   const values = [];
-  let i = 1;
-
-  if (updates.slug) {
-    fields.push(`slug = $${i++}`);
-    values.push(updates.slug);
+  if (lang) {
+    values.push(lang);
+    query += ` AND tt.lang_code = $${values.length}`;
   }
 
-  if (updates.logo) {
-    fields.push(`logo = $${i++}`);
-    values.push(updates.logo);
-  }
+  query += ` ORDER BY t.created_at ASC`;
 
-  if (!fields.length) return null;
+  const result = await db.query(query, values);
 
-  values.push(id);
-
-  const { rows } = await pool.query(
-    `UPDATE esmatechcamp.tutorials
-     SET ${fields.join(", ")}, updated_at = NOW()
-     WHERE id = $${i} AND is_deleted = false
-     RETURNING *`,
-    values,
-  );
-
-  return rows[0] || null;
+  return result.rows;
 };
 
-exports.updateTranslation = async (tutorialId, lang, updates) => {
-  const { title, description } = updates;
-
-  const { rows } = await pool.query(
-    `UPDATE esmatechcamp.tutorials_translation
-     SET title = $1,
-         description = $2,
-         updated_at = NOW()
-     WHERE tutorial_id = $3 AND lang_code = $4
-     RETURNING *`,
-    [title, description, tutorialId, lang]
+exports.getTutorialById = async ({ db, tutorialId }) => {
+  const result = await db.query(
+    `SELECT slug,logo FROM esmatechcamp.tutorials WHERE id=$1`,
+    [tutorialId],
   );
-
-  return rows[0] || null;
+  return result.rows[0];
 };
 
-exports.softDeleteTutorial = async (tutorialId) => {
-  const { rows } = await pool.query(
-    `UPDATE esmatechcamp.tutorials
-     SET is_deleted = true
-     WHERE id = $1
-     RETURNING *`,
-    [tutorialId]
-  );
-
-  return rows[0] || null;
-};
-
-exports.fetchFullTutorialById = async (id, lang) => {
-  const { rows } = await pool.query(
+exports.fetchFullTutorialById = async ({ db, id, lang }) => {
+  const result = await db.query(
     `SELECT
       t.id AS tutorial_id,
       t.slug AS tutorial_slug,
@@ -179,8 +108,56 @@ exports.fetchFullTutorialById = async (id, lang) => {
       AND t.is_deleted = false
 
     ORDER BY m.order_index ASC, l.order_index ASC`,
-    [id, lang]
+    [id, lang],
   );
 
-  return rows;
+  return result.rows;
+};
+
+exports.getTutorialTranslation = async ({ db, id, lang }) => {
+  const result = db.query(
+    `SELECT id FROM esmatechcamp.tutorials_translation WHERE id=$1 and lang=$2`,
+    [id, lang],
+  );
+  return result.rowCount > 0;
+};
+
+exports.updateTutorialById = async ({ db, slug, logo, id }) => {
+  const result = await db.query(
+    `UPDATE esmatechcamp.tutorials SET slug=$1,logo=$2 WHERE id=$3`,
+    [slug, logo, id],
+  );
+  return result.rows[0];
+};
+
+exports.updateTutorialTranslation = async ({
+  db,
+  tutorialId,
+  lang,
+  title,
+  description,
+}) => {
+  const result = await db.query(
+    `UPDATE esmatechcamp.tutorials_translation
+     SET title = $1,
+         description = $2,
+         updated_at = NOW()
+     WHERE tutorial_id = $3 AND lang_code = $4
+     RETURNING *`,
+    [title, description, tutorialId, lang],
+  );
+
+  return result.rows[0];
+};
+
+exports.softDeleteTutorial = async ({ db, tutorialId }) => {
+  const result = await db.query(
+    `UPDATE esmatechcamp.tutorials
+     SET is_deleted = true
+     WHERE id = $1
+     RETURNING *`,
+    [tutorialId],
+  );
+
+  return rows[0] || null;
 };

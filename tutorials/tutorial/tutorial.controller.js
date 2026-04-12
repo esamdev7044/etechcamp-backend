@@ -1,9 +1,9 @@
-const asyncHandler = require("../../common/middleware/asyncHandler");
+const { query } = require("express-validator");
+const asyncHandler = require("../../common/middlewares/asyncHandler");
 const tutorialService = require("./tutorial.service");
 
 exports.createTutorial = asyncHandler(async (req, res) => {
   const tutorial = await tutorialService.createTutorial(req.body, req.file);
-
   res.status(201).json({
     success: true,
     message: "Tutorial created successfully",
@@ -11,16 +11,13 @@ exports.createTutorial = asyncHandler(async (req, res) => {
   });
 });
 
-exports.createOrUpdateTranslation = asyncHandler(async (req, res) => {
-
+exports.createTutorialTranslation = asyncHandler(async (req, res) => {
   const { id } = req.params;
-  const { lang_code, title, description } = req.body;
+  const body = req.body;
 
-  const translation = await tutorialService.createOrUpdateTranslation({
+  const translation = await tutorialService.createTutorialTranslation({
     tutorialId: id,
-    lang_code,
-    title,
-    description,
+    body: body,
   });
 
   res.status(201).json({
@@ -31,11 +28,8 @@ exports.createOrUpdateTranslation = asyncHandler(async (req, res) => {
 });
 
 exports.getAllTutorialsByLang = asyncHandler(async (req, res) => {
-  getTutorialsByLangSchema.parse(req);
-
-  const { lang } = req.params;
-
-  const tutorials = await tutorialService.getAllTutorialsByLang(lang);
+  const { lang } = req.query;
+  const tutorials = await tutorialService.getAllTutorials(lang);
 
   res.status(200).json({
     success: true,
@@ -44,9 +38,10 @@ exports.getAllTutorialsByLang = asyncHandler(async (req, res) => {
   });
 });
 
-exports.getTutorialById = asyncHandler(async (req, res) => {
-  const { id, lang } = req.params;
-  const tutorial = await tutorialService.getTutorialById(id, lang);
+exports.getFullTutorialById = asyncHandler(async (req, res) => {
+  const { id } = req.params;
+  const { lang } = req.query;
+  const tutorial = await tutorialService.getFullTutorialById(id, lang);
 
   res.status(200).json({
     success: true,
@@ -54,46 +49,62 @@ exports.getTutorialById = asyncHandler(async (req, res) => {
   });
 });
 
+// exports.getTutorialById = asyncHandler(async (req, res) => {
+//   const { id, lang } = req.params;
+//   const tutorial = await tutorialService.getTutorialById(id, lang);
+
+//   res.status(200).json({
+//     success: true,
+//     data: tutorial,
+//   });
+// });
+
 exports.updateTutorial = asyncHandler(async (req, res) => {
   const { id } = req.params;
+
+  if (!id) {
+    throw new AppError("Tutorial ID is required", 400);
+  }
+
   const tutorial = await tutorialService.updateTutorial(id, req.body, req.file);
 
   res.status(200).json({
     success: true,
+    message: "Tutorial updated successfully",
     data: tutorial,
   });
 });
 
-const asyncHandler = require("../../common/middleware/asyncHandler");
-const service = require("./tutorialTranslation.service");
-const { updateTranslationSchema, removeTutorialSchema } = require("./tutorialTranslation.validation");
+exports.updateTutorialTranslation = asyncHandler(async (req, res) => {
+  const { id } = req.params;
 
-exports.updateTranslation = asyncHandler(async (req, res) => {
-  const { id, lang } = req.params;
-  const updatedTranslation = await service.updateTranslation(id, lang, req.body);
+  if (!id || !lang) {
+    throw new AppError("ID and language are required", 400);
+  }
+
+  const updatedTranslation = await service.updateTutorialTranslation(
+    id,
+    req.body,
+  );
 
   res.status(200).json({
     success: true,
+    message: "Translation updated successfully",
     data: updatedTranslation,
   });
 });
 
 exports.removeTutorial = asyncHandler(async (req, res) => {
   const { id } = req.params;
+
+  if (!id) {
+    throw new AppError("Tutorial ID is required", 400);
+  }
+
   await service.removeTutorial(id);
 
   res.status(200).json({
     success: true,
-    message: "Deleted successfully",
-  });
-});
-
-exports.getFullTutorialById = asyncHandler(async (req, res) => {
-  const { id, lang } = req.params;
-  const tutorial = await tutorialService.getFullTutorialById(id, lang);
-
-  res.status(200).json({
-    success: true,
-    data: tutorial,
+    message: "Tutorial deleted successfully",
   });
 });

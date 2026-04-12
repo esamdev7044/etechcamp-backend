@@ -1,6 +1,6 @@
 const pool = require("../../config/db");
 const slugify = require("slugify");
-const repo = require("./tutorial.repository");
+const tutorialRepository = require("./tutorial.repository");
 const { AppError } = require("../../common/middlewares/errorHandler");
 const { generateUniqueSlug } = require("../../common/utils/generateUniqueSlug");
 
@@ -14,11 +14,12 @@ exports.createTutorial = async (body, file) => {
     const finalSlug = await generateUniqueSlug({
       base: body.slug,
       checkExists: async (slug) => {
-        await repo.checkExists(slug, client);
+        return await tutorialRepository.checkTutorialSlug({ db: client, slug });
       },
     });
 
-    const tutorial = await repo.create(client, {
+    const tutorial = await tutorialRepository.createTutorial({
+      db: client,
       slug: finalSlug,
       logo: file?.path || file?.secure_url || null,
     });
@@ -33,27 +34,24 @@ exports.createTutorial = async (body, file) => {
   }
 };
 
-exports.createOrUpdateTranslation = async ({
-  tutorialId,
-  lang_code,
-  title,
-  description,
-}) => {
+exports.createTutorialTranslation = async ({ tutorialId, body }) => {
+  const { title, description, lang_code } = body;
   const client = await pool.connect();
 
   try {
     await client.query("BEGIN");
 
-    if (!lang_code || !title)
-      throw new AppError("lang_code and title are required", 400);
+    if (!lang_code || !title) {
+      throw new AppError("Language and title are required", 400);
+    }
 
-    const translation = await repo.upsertTranslation(
+    const translation = await tutorialRepository.upsertTutorialTranslation({
+      db: client,
       tutorialId,
       lang_code,
       title,
       description,
-      client,
-    );
+    });
 
     await client.query("COMMIT");
     return translation;
@@ -65,56 +63,19 @@ exports.createOrUpdateTranslation = async ({
   }
 };
 
-exports.getAllTutorialsByLang = async (lang) => {
+exports.getAllTutorials = async (lang) => {
   if (!lang) throw new AppError("Language code is required", 400);
-  const tutorials = await repo.findAllByLanguage(lang);
+  const tutorials = await tutorialRepository.findAllTutorials({ pool, lang });
   return tutorials;
 };
 
-exports.getTutorialById = async (id, lang) => {
-  if (!id || !lang) throw new AppError("ID and language are required", 400);
-  const tutorial = await repo.findByIdAndLang(id, lang);
-  if (!tutorial) throw new AppError("Tutorial not found", 404);
-  return tutorial;
-};
-
-exports.updateTutorial = async (id, body, file) => {
-  if (!id) throw new AppError("Tutorial ID is required", 400);
-
-  const updates = {};
-
-  if (body.slug) {
-    updates.slug = slugify(body.slug, { lower: true, strict: true });
-  }
-
-  if (file?.path) {
-    updates.logo = file.path;
-  }
-
-  if (Object.keys(updates).length === 0) {
-    throw new AppError("No updates provided", 400);
-  }
-  const updatedTutorial = await repo.updateTutorialById(id, updates);
-  if (!updatedTutorial) throw new AppError("Tutorial not found", 404);
-  return updatedTutorial;
-};
-
-exports.updateTranslation = async (id, lang, body) => {
-  if (!body.title) throw new AppError("Title is required", 400);
-  const updatedTranslation = await repo.updateTranslation(id, lang, body);
-  if (!updatedTranslation) throw new AppError("Translation not found", 404);
-  return updatedTranslation;
-};
-
-exports.removeTutorial = async (id) => {
-  const deletedTutorial = await repo.softDeleteTutorial(id);
-  if (!deletedTutorial) throw new AppError("Tutorial not found", 404);
-  return deletedTutorial;
-};
-
 exports.getFullTutorialById = async (id, lang) => {
-  const rows = await repo.fetchFullTutorialById(id, lang);
-
+  const rows = await tutorialRepository.fetchFullTutorialById({
+    db: pool,
+    id,
+    lang,
+  });
+  
   if (!rows.length) throw new AppError("Tutorial not found", 404);
 
   const tutorial = {
@@ -156,4 +117,112 @@ exports.getFullTutorialById = async (id, lang) => {
   }
 
   return tutorial;
+};
+
+exports.updateTutorial = async (id, body, file) => {
+  const client = await pool.connect();
+  try {
+    await client.query("BEGIN");
+
+    if (!id) throw new AppError("Tutorial ID is required", 400);
+    const existing = await tutorialRepository.getTutorialById({
+      client,
+      tutorialId: id,
+    });
+    if (!existing) throw new AppError("Tutorial not found", 404);
+
+    let slug = existing.slug;
+    let logo = existing.logo;
+
+    if (body.slug) {
+      slug = slugify(body.slug, { lower: true, strict: true });
+    }
+
+    if (file?.path) {
+      logo = file.path;
+    }
+    const updatedTutorial = await tutorialRepository.updateTutorialById({
+      db: client,
+      slug,
+      logo,
+      id,
+    });
+
+    await client.query("COMMIT");
+    return updatedTutorial;
+  } catch (err) {
+    await client.query("ROLLBACK");
+    throw err;
+  } finally {
+    client.release();
+  }
+};
+
+exports.updateTutorialTranslation = async (id, body) => {
+  const client = await pool.connect();
+  const { title, description, lang } = body;
+
+  try {
+    await client.query("BEGIN");
+
+    if (!id || !lang) {
+      throw new AppError("Tutorial ID and language are required", 400);
+    }
+    const existing = await tutorialRepository.getTutorialTranslation({
+      db: pool,
+      id,
+      lang,
+    });
+    if (!existing) {
+      throw new AppError("Translation not found", 404);
+    }
+    const updatedTitle = title ?? existing.title;
+    const updatedDescription = description ?? existing.description;
+
+    const updatedTranslation =
+      await tutorialRepository.updateTutorialTranslation({
+        db: client,
+        id,
+        lang,
+        updatedTitle,
+        updatedDescription,
+      });
+
+    await client.query("COMMIT");
+    return updatedTranslation;
+  } catch (err) {
+    await client.query("ROLLBACK");
+    throw err;
+  } finally {
+    client.release();
+  }
+};
+
+exports.removeTutorial = async (tutorialId) => {
+  const client = await pool.connect();
+
+  try {
+    await client.query("BEGIN");
+
+    if (!tutorialId) {
+      throw new AppError("Tutorial ID is required", 400);
+    }
+
+    const deletedTutorial = await tutorialRepository.softDeleteTutorial({
+      db: client,
+      tutorialId,
+    });
+
+    if (!deletedTutorial) {
+      throw new AppError("Tutorial not found", 404);
+    }
+
+    await client.query("COMMIT");
+    return deletedTutorial;
+  } catch (err) {
+    await client.query("ROLLBACK");
+    throw err;
+  } finally {
+    client.release();
+  }
 };
