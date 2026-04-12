@@ -1,10 +1,12 @@
-const asyncHandler = require("../../common/middleware/asyncHandler");
+const asyncHandler = require("../../common/middlewares/asyncHandler");
 const service = require("./module.service");
 
 exports.createModule = asyncHandler(async (req, res) => {
+  const { tutorialId } = req.params;
+  const body = req.body;
   const module = await service.createModule({
-    tutorialId: req.params.tutorialId,
-    body: req.validated.body,
+    tutorialId,
+    body,
   });
 
   res.status(201).json({
@@ -25,25 +27,15 @@ exports.createModuleTranslation = asyncHandler(async (req, res) => {
   });
 });
 
-exports.getModules = asyncHandler(async (req, res) => {
-  const modules = await service.getModules({
-    tutorialId: req.params.tutorialId,
-  });
-
-  res.status(200).json({
-    success: true,
-    data: modules,
-  });
-});
-
 exports.getModulesByTutorial = asyncHandler(async (req, res) => {
   const modules = await service.getModulesByTutorial({
     tutorialId: req.params.tutorialId,
-    lang: req.params.lang,
+    lang: req.query.lang,
   });
 
   res.status(200).json({
     success: true,
+    count: modules.length,
     data: modules,
   });
 });
@@ -61,10 +53,11 @@ exports.updateModule = asyncHandler(async (req, res) => {
 });
 
 exports.updateModuleTranslation = asyncHandler(async (req, res) => {
+  const  moduleId  = req.params.id;
+  const body = req.body;
   const translation = await service.updateModuleTranslation({
-    moduleId: req.params.id,
-    lang: req.params.lang,
-    body: req.validated.body,
+    moduleId,
+    body,
   });
 
   res.status(200).json({
@@ -73,9 +66,8 @@ exports.updateModuleTranslation = asyncHandler(async (req, res) => {
   });
 });
 
-exports.remove = asyncHandler(async (req, res) => {
+exports.removeModule = asyncHandler(async (req, res) => {
   await service.removeModule(req.params.id);
-
   res.status(200).json({
     success: true,
     message: "Module removed successfully",

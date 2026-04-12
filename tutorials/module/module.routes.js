@@ -1,68 +1,77 @@
 const express = require("express");
 const router = express.Router();
 
-const { authMiddleware } = require("../../common/middlewares/auth.middleware");
+const { authenticate } = require("../../common/middlewares/authenticate");
 
-const { validate, validateParams } = require("../../common/middlewares/validator");
+const {
+  validate,
+  validateParams,
+  validateQuery,
+} = require("../../common/middlewares/validator");
 const {
   globalLimiter,
   sensitiveLimiter,
 } = require("../../common/middlewares/rateLimiter");
 
 const moduleController = require("./module.controller");
-const validation = require("./module.validation");
+const moduleValidation = require("./module.validation");
+const { authorize } = require("../../common/middlewares/authorize");
 
 router.use(globalLimiter);
 
 router.post(
-  "/:tutorialId/modules",
-  authMiddleware,
+  "/tutorials/:tutorialId/modules",
+  authenticate,
   sensitiveLimiter,
-  validate(validation.createModuleSchema),
+  authorize("admin"),
+  validateParams(moduleValidation.idParamSchema),
+  validate(moduleValidation.createModuleSchema),
   moduleController.createModule,
 );
 
 router.post(
-  "/modules/:id/translation",
-  authMiddleware,
+  "/modules/:id/translations",
+  authenticate,
   sensitiveLimiter,
-  validate(validation.moduleTranslationSchema),
+  authorize("admin"),
+  validateParams(moduleValidation.idParamSchema),
+  validate(moduleValidation.moduleTranslationSchema),
   moduleController.createModuleTranslation,
 );
 
 router.get(
   "/tutorials/:tutorialId/modules",
-  validate(validation.getModulesSchema),
+  validateParams(moduleValidation.tutorialIdSchema),
   moduleController.getModulesByTutorial,
 );
 
-router.get(
-  "/tutorials/:tutorialId/modules/:lang",
-  validate(validation.getModulesByTutorialSchema),
-  moduleController.getModulesByTutorial,
-);
-
-router.put(
+router.patch(
   "/modules/:id",
-  authMiddleware,
-  validate(validation.updateModuleSchema),
+  authenticate,
+  sensitiveLimiter,
+  authorize("admin"),
+  validateParams(moduleValidation.idParamSchema),
+  validate(moduleValidation.updateModuleSchema),
   moduleController.updateModule,
 );
 
-router.put(
-  "/modules/:id/translation/:lang",
-  authMiddleware,
+router.patch(
+  "/modules/:id/translations/",
+  authenticate,
   sensitiveLimiter,
-  validate(validation.updateModuleTranslationSchema),
+  authorize("admin"),
+  validateParams(moduleValidation.idParamSchema),
+  validate(moduleValidation.updateModuleTranslationSchema),
   moduleController.updateModuleTranslation,
 );
 
 router.delete(
   "/modules/:id",
-  authMiddleware,
+  authenticate,
   sensitiveLimiter,
-  validate(validation.deleteModuleSchema),
-  moduleController.remove,
+  authorize("admin"),
+  validateParams(moduleValidation.idParamSchema),
+  moduleController.removeModule,
 );
 
 module.exports = router;

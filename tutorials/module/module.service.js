@@ -1,185 +1,211 @@
 const slugify = require("slugify");
-const repo = require("./module.repository");
+const pool = require("../../config/db");
+
+const moduleRepository = require("./module.repository");
 const { AppError } = require("../../common/middlewares/errorHandler");
+const { generateUniqueSlug } = require("../../common/utils/generateUniqueSlug");
 
 exports.createModule = async ({ tutorialId, body }) => {
-  const { slug } = body;
+  const client = await pool.connect();
 
-  if (!tutorialId) {
-    throw new AppError("Tutorial ID is required", 400);
-  }
+  try {
+    await client.query("BEGIN");
 
-  const baseSlug = slugify(slug, { lower: true, strict: true }).slice(0, 50);
-
-  let finalSlug = baseSlug;
-  let counter = 1;
-
-  while (true) {
-    const exists = await repo.checkSlugExists(tutorialId, finalSlug);
-
-    if (!exists) break;
-
-    finalSlug = `${baseSlug}-${counter++}`;
-
-    if (counter > 10) {
-      throw new AppError("Unable to generate unique slug", 500);
+    if (!tutorialId) {
+      throw new AppError("Tutorial ID is required", 400);
     }
-  }
 
-  return await repo.createModule({
-    tutorialId,
-    slug: finalSlug,
-  });
+    const { slug } = body;
+    if (!slug) {
+      throw new AppError("Slug is required", 400);
+    }
+
+    const baseSlug = slugify(slug, { lower: true, strict: true }).slice(0, 50);
+
+    const finalSlug = await generateUniqueSlug({
+      base: baseSlug,
+      checkExists: async (slug) => {
+        return await moduleRepository.checkSlugExists({
+          db: client,
+          tutorialId,
+          slug,
+        });
+      },
+    });
+
+    const module = await moduleRepository.createModule({
+      db: client,
+      tutorialId,
+      slug: finalSlug,
+    });
+
+    await client.query("COMMIT");
+    return module;
+  } catch (err) {
+    await client.query("ROLLBACK");
+    throw err;
+  } finally {
+    client.release();
+  }
 };
 
 exports.createModuleTranslation = async ({ moduleId, body }) => {
-  const { lang_code, title } = body;
+  const client = await pool.connect();
 
-  if (!moduleId) {
-    throw new AppError("Module ID is required", 400);
+  try {
+    await client.query("BEGIN");
+
+    const { lang_code, title } = body;
+
+    if (!moduleId) {
+      throw new AppError("Module ID is required", 400);
+    }
+
+    if (!lang_code || !title) {
+      throw new AppError("Language code and title are required", 400);
+    }
+
+    const exists = await moduleRepository.checkModuleExists({
+      db: client,
+      moduleId,
+    });
+
+    if (!exists) {
+      throw new AppError("Module not found", 404);
+    }
+
+    const translation = await moduleRepository.upsertModuleTranslation({
+      db: client,
+      moduleId,
+      lang_code,
+      title,
+    });
+
+    await client.query("COMMIT");
+    return translation;
+  } catch (err) {
+    await client.query("ROLLBACK");
+    throw err;
+  } finally {
+    client.release();
   }
-  if (!lang_code || !title) {
-    throw new AppError("Language code and title are required", 400);
+};
+
+exports.getModulesByTutorial = async ({ tutorialId, lang = "en" }) => {
+  if (!tutorialId) {
+    throw new AppError("Tutorial ID is required", 400);
   }
 
-  const exists = await repo.checkModuleExists(moduleId);
+  const exists = await moduleRepository.checkTutorialExists({
+    db: pool,
+    tutorialId,
+  });
   if (!exists) {
-    throw new AppError("Module not found", 404);
+    throw new AppError("Tutorial not found", 404);
   }
 
-  return await repo.upsertModuleTranslation({
-    moduleId,
-    lang_code,
-    title,
+  return await moduleRepository.getModulesWithTranslation({
+    db: pool,
+    tutorialId,
+    lang,
   });
 };
-
-exports.getModules = async ({ tutorialId }) => {
-  if (!tutorialId) {
-    throw new AppError("Tutorial ID is required", 400);
-  }
-
-  const exists = await repo.checkTutorialExists(tutorialId);
-  if (!exists) {
-    throw new AppError("Tutorial not found", 404);
-  }
-
-  return await repo.getModulesByTutorial(tutorialId);
-};
-
-exports.checkTutorialExists = async (tutorialId) => {
-  const { rowCount } = await pool.query(
-    `SELECT 1 FROM esmatechcamp.tutorials 
-     WHERE id = $1 AND is_deleted = false`,
-    [tutorialId]
-  );
-
-  return rowCount > 0;
-};
-
-exports.getModulesByTutorial = async (tutorialId) => {
-  const { rows } = await pool.query(
-    `SELECT 
-        id AS module_id, 
-        slug AS module_slug, 
-        order_index
-     FROM esmatechcamp.modules
-     WHERE tutorial_id = $1 
-     AND is_deleted = false
-     ORDER BY order_index ASC`,
-    [tutorialId]
-  );
-
-  return rows;
-};
-
-exports.getModulesByTutorial = async ({ tutorialId, lang }) => {
-  if (!tutorialId) {
-    throw new AppError("Tutorial ID is required", 400);
-  }
-
-  if (!lang) {
-    throw new AppError("Language is required", 400);
-  }
-
-  const exists = await repo.checkTutorialExists(tutorialId);
-  if (!exists) {
-    throw new AppError("Tutorial not found", 404);
-  }
-
-  return await repo.getModulesWithTranslation(tutorialId, lang);
-};
-
-const slugify = require("slugify");
-const repo = require("./module.repository");
-const { AppError } = require("../../common/middleware/errorHandler");
 
 exports.updateModule = async ({ id, body }) => {
-  if (!id) {
-    throw new AppError("Module ID is required", 400);
+  const client = await pool.connect();
+
+  try {
+    await client.query("BEGIN");
+    if (!id) {
+      throw new AppError("Module ID is required", 400);
+    }
+    let slug;
+    if (body.slug) {
+      slug = slugify(body.slug, { lower: true, strict: true });
+    }
+
+    const updated = await moduleRepository.updateModule({
+      db: client,
+      id,
+      slug,
+    });
+    if (!updated) {
+      throw new AppError("Module not found", 404);
+    }
+
+    await client.query("COMMIT");
+    return updated;
+  } catch (err) {
+    await client.query("ROLLBACK");
+    throw err;
+  } finally {
+    client.release();
   }
-
-  const updates = {};
-
-  if (body.slug) {
-    updates.slug = slugify(body.slug, { lower: true, strict: true });
-  }
-
-  if (body.order_index !== undefined) {
-    updates.order_index = body.order_index;
-  }
-
-  if (Object.keys(updates).length === 0) {
-    throw new AppError("No data to update", 400);
-  }
-
-  const updated = await repo.updateModule(id, updates);
-
-  if (!updated) {
-    throw new AppError("Module not found", 404);
-  }
-
-  return updated;
 };
+exports.updateModuleTranslation = async ({ moduleId, body }) => {
+  const client = await pool.connect();
 
-exports.updateModuleTranslation = async ({ moduleId, lang, body }) => {
-  if (!moduleId) {
-    throw new AppError("Module ID is required", 400);
+  try {
+    await client.query("BEGIN");
+    const { title, lang } = body;
+    if (!moduleId) {
+      throw new AppError("Module ID is required", 400);
+    }
+
+    if (!lang) {
+      throw new AppError("Language is required", 400);
+    }
+
+    if (!title) {
+      throw new AppError("Title is required", 400);
+    }
+
+    const updated = await moduleRepository.updateModuleTranslation({
+      db: client,
+      moduleId,
+      lang,
+      title,
+    });
+
+    if (!updated) {
+      throw new AppError("Module translation not found", 404);
+    }
+
+    await client.query("COMMIT");
+    return updated;
+  } catch (err) {
+    await client.query("ROLLBACK");
+    throw err;
+  } finally {
+    client.release();
   }
-
-  if (!lang) {
-    throw new AppError("Language is required", 400);
-  }
-
-  const { title } = body;
-
-  if (!title) {
-    throw new AppError("Title is required", 400);
-  }
-
-  const updated = await repo.updateModuleTranslation({
-    moduleId,
-    lang,
-    title,
-  });
-
-  if (!updated) {
-    throw new AppError("Module translation not found", 404);
-  }
-
-  return updated;
 };
 
 exports.removeModule = async (id) => {
-  if (!id) {
-    throw new AppError("Module ID is required", 400);
+  const client = await pool.connect();
+
+  try {
+    await client.query("BEGIN");
+
+    if (!id) {
+      throw new AppError("Module ID is required", 400);
+    }
+
+    const deleted = await moduleRepository.softDeleteModule({
+      db: client,
+      id,
+    });
+
+    if (!deleted) {
+      throw new AppError("Module not found", 404);
+    }
+
+    await client.query("COMMIT");
+    return deleted;
+  } catch (err) {
+    await client.query("ROLLBACK");
+    throw err;
+  } finally {
+    client.release();
   }
-
-  const deleted = await repo.softDeleteModule(id);
-
-  if (!deleted) {
-    throw new AppError("Module not found", 404);
-  }
-
-  return true;
 };
