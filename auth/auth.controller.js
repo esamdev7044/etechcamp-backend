@@ -51,41 +51,6 @@ exports.logout = asyncHandler(async (req, res) => {
   });
 });
 
-exports.createProfile = asyncHandler(async (req, res) => {
-  const profile = await authService.createProfile(
-    req.user.id,
-    req.validated.body,
-    req.file
-  );
-
-  res.status(201).json({
-    success: true,
-    data: profile,
-  });
-});
-
-exports.getProfile = asyncHandler(async (req, res) => {
-  const profile = await authService.getProfile(req.user.id);
-
-  res.json({
-    success: true,
-    data: profile,
-  });
-});
-
-exports.updateProfile = asyncHandler(async (req, res) => {
-  const profile = await authService.updateProfile(
-    req.user.id,
-    req.validated.body,
-    req.file
-  );
-
-  res.json({
-    success: true,
-    data: profile,
-  });
-});
-
 exports.deleteUser = asyncHandler(async (req, res) => {
   await authService.deleteUser(req.user.id);
 

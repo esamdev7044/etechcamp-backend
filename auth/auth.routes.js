@@ -1,20 +1,10 @@
 const express = require("express");
-const passport = require("passport");
-const {
-  registerUser,
-  loginUser,
-  refreshToken,
-  createProfile,
-  updateProfile,
-} = require("./auth.controller");
-const { authMiddleware } = require("../middleware/authMiddleware");
 
-const validate = require("../middleware/validate");
-const {
-  registerSchema,
-  loginSchema,
-  profileSchema,
-} = require("../modules/auth/auth.validation");
+const authController = require("./auth.controller");
+
+const { validate } = require("../common/middlewares/validator");
+
+const validation = require("./auth.validation");
 
 const {
   globalLimiter,
@@ -23,20 +13,22 @@ const {
 } = require("../common/middlewares/rateLimiter");
 
 const router = express.Router();
-router.post("/register", authLimiter, validate(registerSchema), registerUser);
-router.post("/login", authLimiter, validate(loginSchema), loginUser);
-router.post("/refresh", sensitiveLimiter, refreshToken);
+router.use(globalLimiter);
+
 router.post(
-  "/create-profile",
-  authMiddleware,
-  globalLimiter,
-  validate(profileSchema),
-  createProfile,
+  "/register",
+  authLimiter,
+  validate(validation.registerSchema),
+  authController.registerUser,
 );
-router.put(
-  "/update-profile",
-  authMiddleware,
-  globalLimiter,
-  validate(profileSchema),
-  updateProfile,
+
+router.post(
+  "/login",
+  authLimiter,
+  validate(validation.loginSchema),
+  authController.loginUser,
 );
+
+router.post("/refresh-token", sensitiveLimiter, authController.refreshToken);
+
+module.exports = router;

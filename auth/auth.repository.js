@@ -1,6 +1,4 @@
-const pool = require("../../config/db");
-
-exports.findUserByEmail = async (email) => {
+exports.findUserByEmail = async (pool, email) => {
   const result = await pool.query(
     `SELECT id, email, password_hash, failed_attempts, locked_until
      FROM esmatechcamp.users 
@@ -10,7 +8,17 @@ exports.findUserByEmail = async (email) => {
   return result.rows[0];
 };
 
-exports.getUser = async (userId) => {
+exports.createUser = async (client, email, passwordHash) => {
+  const result = await client.query(
+    `INSERT INTO esmatechcamp.users (email, password_hash) 
+     VALUES ($1, $2)
+      RETURNING id, email`,
+    [email, passwordHash],
+  );
+  return result.rows[0];
+};
+
+exports.getUser = async (pool, userId) => {
   const result = await pool.query(
     `SELECT id, email, is_active, is_deleted 
        FROM esmatechcamp.users 
@@ -20,7 +28,24 @@ exports.getUser = async (userId) => {
   return result.rows[0];
 };
 
-exports.incrementFailedAttempts = async (userId) => {
+exports.getUserRole = async (pool, userId) => {
+  const result = await pool.query(
+    `SELECT r.name FROM esmatechcamp.roles r
+     JOIN esmatechcamp.user_roles ur ON r.id = ur.role_id
+     WHERE ur.user_id = $1`,
+    [userId],
+  );
+  return result.rows[0] ? result.rows[0].name : null;
+};
+exports.assignRole = async (client, userId, roleId) => {
+  await client.query(
+    `INSERT INTO esmatechcamp.user_roles (user_id, role_id)
+      VALUES ($1, $2)`,
+    [userId, roleId],
+  );
+};
+
+exports.incrementFailedAttempts = async (pool, userId) => {
   await pool.query(
     `UPDATE esmatechcamp.users
      SET failed_attempts = failed_attempts + 1
@@ -29,7 +54,7 @@ exports.incrementFailedAttempts = async (userId) => {
   );
 };
 
-exports.resetFailedAttempts = async (userId) => {
+exports.resetFailedAttempts = async (pool, userId) => {
   await pool.query(
     `UPDATE esmatechcamp.users
      SET failed_attempts = 0, locked_until = NULL
@@ -38,7 +63,7 @@ exports.resetFailedAttempts = async (userId) => {
   );
 };
 
-exports.lockUser = async (userId, lockUntil) => {
+exports.lockUser = async (pool, userId, lockUntil) => {
   await pool.query(
     `UPDATE esmatechcamp.users
      SET locked_until = $1
@@ -83,54 +108,6 @@ exports.revokeAllUserSessions = async (userId, client) => {
      WHERE user_id = $1`,
     [userId],
   );
-};
-
-exports.createProfile = async (client, data) => {
-  const { userId, fullName, age, region, city, gender, imageUrl } = data;
-
-  const result = await client.query(
-    `INSERT INTO esmatechcamp.user_profiles
-     (user_id, full_name, age, region, city, gender, profile_picture)
-     VALUES($1,$2,$3,$4,$5,$6,$7)
-     RETURNING *`,
-    [userId, fullName, age, region, city, gender, imageUrl],
-  );
-
-  return result.rows[0];
-};
-
-exports.getProfile = async (userId) => {
-  const result = await pool.query(
-    `SELECT u.id, u.email, p.* FROM esmatechcamp.users u
-     JOIN esmatechcamp.user_profiles p ON u.id = p.user_id
-     WHERE u.id = $1`,
-    [userId],
-  );
-
-  return result.rows[0];
-};
-
-exports.getProfileByUserId = async (client, userId) => {
-  const result = await client.query(
-    `SELECT * FROM esmatechcamp.user_profiles WHERE user_id = $1`,
-    [userId],
-  );
-
-  return result.rows[0];
-};
-
-exports.updateProfile = async (client, fields, values, userId) => {
-  values.push(userId);
-
-  const query = `
-    UPDATE esmatechcamp.user_profiles
-    SET ${fields.join(", ")}
-    WHERE user_id = $${values.length}
-    RETURNING *;
-  `;
-
-  const result = await client.query(query, values);
-  return result.rows[0];
 };
 
 exports.findUserById = async (client, userId) => {

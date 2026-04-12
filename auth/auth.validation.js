@@ -1,7 +1,5 @@
 const { z } = require("zod");
 
-const { z } = require("zod");
-
 exports.registerSchema = z.object({
   body: z.object({
     email: z
@@ -26,36 +24,4 @@ exports.loginSchema = z.object({
     email: z.string().email(),
     password: z.string().min(1, "Password is required"),
   }),
-});
-
-exports.profileSchema = z.object({
-  body: z
-    .object({
-      userId: z
-        .number({ invalid_type_error: "User ID must be a number" })
-        .int()
-        .positive(),
-
-      full_name: z
-        .string()
-        .min(2, "Full name must be at least 2 characters")
-        .max(100)
-        .trim()
-        .optional(),
-
-      age: z.number().int().min(13, "Minimum age is 13").max(120).optional(),
-
-      region: z.string().min(2).max(100).trim().optional(),
-
-      city: z.string().min(2).max(100).trim().optional(),
-
-      gender: z.enum(["male", "female", "other"]).optional(),
-
-      profile_picture: z.string().url("Invalid image URL").optional(),
-
-      profilePublicId: z.string().max(255).optional(),
-
-      bio: z.string().max(500).trim().optional(),
-    })
-    .strict(),
 });
