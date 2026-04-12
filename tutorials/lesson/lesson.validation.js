@@ -1,19 +1,28 @@
 const { z } = require("zod");
 
-const idParam = z.object({
+const quizSchema = z.object({
+  questions: z.array(
+    z.object({
+      question: z.string().min(1),
+      options: z.array(z.string().min(1)).min(2),
+      answer: z.string().min(1),
+    })
+  ).min(1),
+});
+
+exports.idParamSchema = z.object({
   id: z.string().uuid("Invalid lesson ID"),
 });
 
-const moduleParam = z.object({
+exports.moduleParamSchema = z.object({
   moduleId: z.string().uuid("Invalid module ID"),
 });
 
-const langParam = z.object({
+exports.langQuerySchema = z.object({
   lang: z.string().min(2).max(5),
 });
 
 exports.createLessonSchema = z.object({
-  params: moduleParam,
   body: z.object({
     slug: z
       .string()
@@ -36,7 +45,6 @@ exports.createLessonSchema = z.object({
 });
 
 exports.updateLessonSchema = z.object({
-  params: idParam,
   body: z
     .object({
       slug: z.string().min(3).max(100).trim().optional(),
@@ -65,26 +73,14 @@ exports.updateLessonSchema = z.object({
 });
 
 exports.lessonTranslationSchema = z.object({
-  params: idParam.merge(langParam),
   body: z.object({
     title: z
       .string()
       .min(2, "Title is required")
       .max(255),
 
-    content: z.string().optional().nullable(),
+    content: z.string().min(10),
     practice: z.string().optional().nullable(),
-    quiz: z.string().optional().nullable(),
+    quiz: quizSchema,
   }),
-});
-
-exports.getLessonsSchema = z.object({
-  params: moduleParam,
-  query: z.object({
-    lang: z.string().min(2).max(5).optional(),
-  }),
-});
-
-exports.deleteLessonSchema = z.object({
-  params: idParam,
 });

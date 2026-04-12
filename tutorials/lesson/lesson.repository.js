@@ -1,49 +1,41 @@
-const pool = require("../../config/db");
+const TABLE = "esmatechcamp.lessons";
+const TRANSLATION_TABLE = "esmatechcamp.lessons_translation";
 
-exports.slugExists = async (db = pool, moduleId, slug) => {
-  const { rowCount } = await db.query(
-    `SELECT 1 
-     FROM esmatechcamp.lessons 
-     WHERE module_id = $1 AND slug = $2`,
+exports.slugExists = async ({ db, moduleId, slug }) => {
+  const result = await db.query(
+    `SELECT 1 FROM ${TABLE} WHERE module_id = $1 
+      AND slug = $2
+      AND is_deleted = false`,
     [moduleId, slug],
   );
 
-  return rowCount > 0;
+  return result.rowCount > 0;
 };
 
-exports.createLesson = async (
-  db = pool,
-  moduleId,
-  slug,
-  videoUrl,
-  orderIndex,
-) => {
-  const { rows } = await db.query(
-    `INSERT INTO esmatechcamp.lessons 
-      (module_id, slug, video_url, order_index)
-     VALUES ($1, $2, $3, $4)
+exports.createLesson = async ({ db, moduleId, slug, videoUrl }) => {
+  const result = await db.query(
+    `INSERT INTO ${TABLE} (module_id, slug, video_url, order_index)
+     VALUES ( $1, $2, $3, COALESCE(
+     (SELECT MAX(order_index) + 1 FROM ${TABLE} WHERE module_id = $1), 1 ))
      RETURNING *`,
-    [moduleId, slug, videoUrl, orderIndex],
+    [moduleId, slug, videoUrl],
   );
 
-  return rows[0];
+  return result.rows[0];
 };
 
-exports.upsertLessonTranslation = async (
-  db = pool,
+exports.upsertLessonTranslation = async ({
+  db,
   lessonId,
   langCode,
   title,
   content,
   practice,
   quiz,
-) => {
-  const { rows } = await db.query(
-    `INSERT INTO esmatechcamp.lessons_translation
-      (lesson_id, lang_code, title, content, practice, quiz)
-     VALUES ($1, $2, $3, $4, $5, $6)
-     ON CONFLICT (lesson_id, lang_code)
-     DO UPDATE SET
+}) => {
+  const result = await db.query(
+    `INSERT INTO ${TRANSLATION_TABLE} (lesson_id, lang_code, title, content, practice, quiz)
+     VALUES ($1, $2, $3, $4, $5, $6) ON CONFLICT (lesson_id, lang_code) DO UPDATE SET
        title = EXCLUDED.title,
        content = EXCLUDED.content,
        practice = EXCLUDED.practice,
@@ -53,118 +45,76 @@ exports.upsertLessonTranslation = async (
     [lessonId, langCode, title, content, practice, quiz],
   );
 
-  return rows[0];
+  return result.rows[0];
 };
 
-exports.findLessonsByModule = async (
-  db = pool,
+exports.findLessonsByModule = async ({
+  db,
   moduleId,
   lang,
-  fallbackLang = "en"
-) => {
-  const { rows } = await db.query(
-    `SELECT 
-        l.id AS lesson_id,
-        l.slug AS lesson_slug,
-        l.video_url AS lesson_video_url,
-        l.order_index,
-        l.created_at AS lesson_created_at,
-
-        COALESCE(lt.title, lft.title) AS lesson_title,
-        COALESCE(lt.content, lft.content) AS lesson_content,
-        COALESCE(lt.practice, lft.practice) AS lesson_practice,
-        COALESCE(lt.quiz, lft.quiz) AS lesson_quiz,
-        COALESCE(lt.lang_code, lft.lang_code) AS lesson_lang_code
-
-     FROM esmatechcamp.lessons l
-
-     LEFT JOIN esmatechcamp.lessons_translation lt
-       ON l.id = lt.lesson_id AND lt.lang_code = $2
-
-     LEFT JOIN esmatechcamp.lessons_translation lft
-       ON l.id = lft.lesson_id AND lft.lang_code = $3
-
-     WHERE l.module_id = $1 
-       AND l.is_deleted = false
-
-     ORDER BY l.order_index ASC`,
-    [moduleId, lang, fallbackLang]
+  fallbackLang = "en",
+}) => {
+  const result = await db.query(
+    `SELECT l.id, l.slug, l.video_url, l.order_index, l.created_at,
+    COALESCE(lt.title, lft.title) AS title,
+    COALESCE(lt.content, lft.content) AS content,
+    COALESCE(lt.practice, lft.practice) AS practice,
+    COALESCE(lt.quiz, lft.quiz) AS quiz,
+    COALESCE(lt.lang_code, lft.lang_code) AS lang_code
+    FROM ${TABLE} l LEFT JOIN ${TRANSLATION_TABLE} lt ON l.id = lt.lesson_id AND lt.lang_code = $2
+    LEFT JOIN ${TRANSLATION_TABLE} lft
+    ON l.id = lft.lesson_id AND lft.lang_code = $3
+    WHERE l.module_id = $1 AND l.is_deleted = false ORDER BY l.order_index ASC`,
+    [moduleId, lang, fallbackLang],
   );
 
-  return rows;
+  return result.rows;
 };
 
-exports.findLessons = async (db = pool, moduleId) => {
-  const { rows } = await db.query(
-    `SELECT 
-        id AS lesson_id,
-        slug AS lesson_slug,
-        video_url AS lesson_video_url,
-        order_index
-     FROM esmatechcamp.lessons
-     WHERE module_id = $1 
-       AND is_deleted = false
+exports.findLessons = async ({ db, moduleId }) => {
+  const result = await db.query(
+    `SELECT id, slug, video_url, order_index
+     FROM ${TABLE} WHERE module_id = $1 AND is_deleted = false
      ORDER BY order_index ASC`,
-    [moduleId]
+    [moduleId],
   );
 
-  return rows;
+  return result.rows;
 };
 
-exports.updateLesson = async (db = pool, id, fields, values) => {
-  const { rows, rowCount } = await db.query(
-    `UPDATE esmatechcamp.lessons
-     SET ${fields.join(", ")}, updated_at = NOW()
-     WHERE id = $${values.length} 
+exports.updateLesson = async ({ db, id, slug, videoUrl, orderIndex }) => {
+  const result = await db.query(
+    `UPDATE ${TABLE}
+     SET slug = $1, video_url = $2, order_index = $3, updated_at = NOW()
+     WHERE id = $4
        AND is_deleted = false
      RETURNING *`,
-    values
+    [slug, videoUrl, orderIndex, id],
   );
 
-  return { lesson: rows[0], rowCount };
+  return { lesson: result.rows[0], rowCount: result.rowCount };
 };
 
-exports.updateLessonTranslation = async (
-  db = pool,
-  lessonId,
-  lang,
-  payload
-) => {
+exports.updateLessonTranslation = async ({ db, lessonId, lang, payload }) => {
   const { title, content, practice, quiz } = payload;
 
-  const { rows, rowCount } = await db.query(
-    `UPDATE esmatechcamp.lessons_translation
-     SET 
-       title = $1,
-       content = $2,
-       practice = $3,
-       quiz = $4,
-       updated_at = NOW()
-     WHERE lesson_id = $5 
-       AND lang_code = $6
+  const result = await db.query(
+    `UPDATE ${TRANSLATION_TABLE} SET title = $1, content = $2, practice = $3, quiz = $4, updated_at = NOW()
+     WHERE lesson_id = $5 AND lang_code = $6
      RETURNING *`,
-    [
-      title,
-      content || null,
-      practice || null,
-      quiz || null,
-      lessonId,
-      lang,
-    ]
+    [title, content, practice, quiz, lessonId, lang],
   );
 
-  return { translation: rows[0], rowCount };
+  return { translation: result.rows[0], rowCount: result.rowCount };
 };
 
-exports.softDeleteLesson = async (db = pool, id) => {
-  const { rowCount } = await db.query(
-    `UPDATE esmatechcamp.lessons
-     SET is_deleted = true,
-         updated_at = NOW()
-     WHERE id = $1
-       AND is_deleted = false`,
-    [id]
+exports.softDeleteLesson = async ({ db, id }) => {
+  const result = await db.query(
+    `UPDATE ${TABLE} SET is_deleted = true, updated_at = NOW()
+     WHERE id = $1 AND is_deleted = false
+     RETURNING *`,
+    [id],
   );
 
-  return rowCount;
+  return result.rows[0];
 };
