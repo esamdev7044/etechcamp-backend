@@ -1,8 +1,6 @@
 const asyncHandler = require("../common/middlewares/asyncHandler");
 const service = require("./blog.service");
 
-const asyncHandler = require("../common/middlewares/asyncHandler");
-
 exports.getBlogs = asyncHandler(async (req, res) => {
   let { lang, page = 1, limit = 10 } = req.query;
 
@@ -17,20 +15,38 @@ exports.getBlogs = asyncHandler(async (req, res) => {
 
   res.json({
     success: true,
-    data: blogs,
-    meta: {
-      page,
-      limit,
-    },
+    data: blogs.data,
+    meta: blogs.meta,
   });
 });
 
-exports.getFeaturedBlogs = asyncHandler(async (req, res) => {
-  const blogs = await service.getFeaturedBlogs();
+exports.searchBlogs = asyncHandler(async (req, res) => {
+  const { query, lang, page = 1, limit = 10 } = req.query;
+
+  if (!query) {
+    return res.json({
+      success: true,
+      data: [],
+      meta: {
+        page: parseInt(page),
+        limit: parseInt(limit),
+        total: 0,
+        totalPages: 0,
+      },
+    });
+  }
+
+  const blogs = await service.searchBlogs({
+    query,
+    lang,
+    page: parseInt(page),
+    limit: parseInt(limit),
+  });
 
   res.json({
     success: true,
-    data: blogs,
+    data: blogs.data,
+    meta: blogs.meta,
   });
 });
 

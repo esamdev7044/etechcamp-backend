@@ -1,16 +1,17 @@
 const slugify = require("slugify");
-const pool = require("../../config/db");
+const pool = require("../config/db");
 const repo = require("./blog.repository");
-const { AppError } = require("../../common/middleware/errorHandler");
+const { AppError } = require("../common/middlewares/errorHandler");
+const { generateUniqueSlug } = require("../common/utils/generateUniqueSlug");
 
-exports.getBlogs = async ({ lang, page = 1, limit = 10 }) => {
+exports.getBlogs = async ({ lang, isFeatured, page = 1, limit = 10 }) => {
   const safePage = Math.max(1, page);
-  const safeLimit = Math.min(50, Math.max(1, limit)); 
-
+  const safeLimit = Math.min(50, Math.max(1, limit));
   const offset = (safePage - 1) * safeLimit;
 
-  const { rows, total } = await repo.getBlogs({
+  const { rows, total } = await repo.getBlogs(pool, {
     lang,
+    featured: isFeatured,
     limit: safeLimit,
     offset,
   });
@@ -27,7 +28,7 @@ exports.getBlogs = async ({ lang, page = 1, limit = 10 }) => {
 };
 
 exports.getBlogBySlug = async (slug) => {
-  const blog = await repo.getBlogBySlug(slug);
+  const blog = await repo.getBlogBySlug(pool, slug);
 
   if (!blog) {
     throw new AppError("Blog not found", 404);
@@ -41,9 +42,9 @@ exports.createBlog = async (userId, body, file) => {
     throw new AppError("Unauthorized", 401);
   }
 
-  const { title, content, category_id, language_code } = body;
+  const { title, content, category_slug, language_code } = body;
 
-  if (!title || !content || !category_id || !language_code) {
+  if (!title || !content || !category_slug || !language_code) {
     throw new AppError("Missing required fields", 400);
   }
 
@@ -53,7 +54,10 @@ exports.createBlog = async (userId, body, file) => {
     await client.query("BEGIN");
 
     const baseSlug = slugify(title, { lower: true, strict: true }).slice(0, 60);
+    const categorySlug = slugify(category_slug, { lower: true, strict: true });
     const featured_image_id = file?.fileId || null;
+
+    const categoryId = await repo.selectCategoryIdBySlug(client, categorySlug);
 
     let slug;
     let attempt = 0;
@@ -68,6 +72,7 @@ exports.createBlog = async (userId, body, file) => {
           ...body,
           slug,
           featured_image_id,
+          category_id: categoryId,
         });
 
         await client.query("COMMIT");
@@ -120,8 +125,6 @@ exports.updateBlog = async (id, body, file) => {
         values.push(body[key]);
       }
     }
-
-    // ✅ Slug regeneration with collision handling
     if (body.title) {
       const baseSlug = slugify(body.title, {
         lower: true,
@@ -129,40 +132,27 @@ exports.updateBlog = async (id, body, file) => {
         trim: true,
       }).slice(0, 60);
 
-      let slug;
-      let attempt = 0;
-      const MAX_RETRIES = 5;
-
-      while (attempt < MAX_RETRIES) {
-        slug = attempt === 0 ? baseSlug : `${baseSlug}-${attempt}`;
-
-        try {
-          fields.push(`slug = $${i++}`);
-          values.push(slug);
-          break;
-        } catch {
-          attempt++;
-        }
-      }
+      const finalSlug = await generateUniqueSlug({
+        base: baseSlug,
+        checkExists: async (slug) => {
+          await repo.checkSlugExists(pool, slug);
+        },
+      });
+      fields.push(`slug = $${i++}`);
+      values.push(finalSlug);
     }
-
     if (file?.fileId) {
       fields.push(`featured_image_id = $${i++}`);
       values.push(file.fileId);
     }
-
     if (!fields.length) {
       throw new AppError("No data to update", 400);
     }
-
-    const updated = await repo.updateBlog(fields, values, id);
-
-    await client.query("COMMIT");
-
+    const updated = await repo.updateBlog(client, fields, values, id);
     if (!updated) {
       throw new AppError("Blog not found", 404);
     }
-
+    await client.query("COMMIT");
     return updated;
   } catch (err) {
     await client.query("ROLLBACK");
@@ -176,12 +166,37 @@ exports.updateBlog = async (id, body, file) => {
     client.release();
   }
 };
-// ================= DELETE =================
 
 exports.deleteBlog = async (id) => {
-  const deleted = await repo.deleteBlog(id);
-
+  const deleted = await repo.deleteBlog(pool, id);
   if (!deleted) {
     throw new AppError("Blog not found", 404);
   }
+};
+
+exports.searchBlogs = async ({ query, lang, page = 1, limit = 10 }) => {
+  if (!query) {
+    return { data: [], meta: { page, limit, total: 0, totalPages: 0 } };
+  }
+
+  const safePage = Math.max(1, page);
+  const safeLimit = Math.min(50, Math.max(1, limit));
+  const offset = (safePage - 1) * safeLimit;
+
+  const { data, total } = await repo.searchBlogs(pool, {
+    query: query.trim(),
+    lang: lang ? lang.trim() : null,
+    limit: safeLimit,
+    offset: offset,
+  });
+
+  return {
+    data: data,
+    meta: {
+      page: safePage,
+      limit: safeLimit,
+      total,
+      totalPages: Math.ceil(total / safeLimit),
+    },
+  };
 };

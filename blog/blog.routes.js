@@ -2,8 +2,8 @@ const express = require("express");
 
 const blogController = require("./blog.controller");
 
-const { authMiddleware } = require("../common/middlewares/auth.middleware");
-const { authorize } = require("../common/middlewares/blog.authorize");
+const { authenticate } = require("../common/middlewares/authenticate");
+const { authorize } = require("../common/middlewares/authorize");
 const { validate, validateParams } = require("../common/middlewares/validator");
 
 const blogValidation = require("./blog.validation");
@@ -24,11 +24,10 @@ router.get(
   validateParams(blogValidation.slugParamSchema),
   blogController.getBlogBySlug,
 );
-// router.get("/category/:categorySlug", blogController.get);
 
 router.post(
   "/",
-  authMiddleware,
+  authenticate,
   authorize("admin"),
   sensitiveLimiter,
   validate(blogValidation.createBlogSchema),
@@ -36,7 +35,7 @@ router.post(
 );
 router.put(
   "/:id",
-  authMiddleware,
+  authenticate,
   authorize("admin"),
   sensitiveLimiter,
   validateParams(blogValidation.idParamSchema),
@@ -45,7 +44,7 @@ router.put(
 );
 router.delete(
   "/:id",
-  authMiddleware,
+  authenticate,
   authorize("admin"),
   sensitiveLimiter,
   validateParams(blogValidation.idParamSchema),
