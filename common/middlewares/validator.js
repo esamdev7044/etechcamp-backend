@@ -1,3 +1,6 @@
+const { ZodError } = require("zod");
+const { AppError } = require("./errorHandler");
+
 const validate = (schema) => {
   return (req, res, next) => {
     try {
@@ -25,11 +28,31 @@ const validate = (schema) => {
 
 const validateParams = (schema) => (req, res, next) => {
   try {
-    req.params = schema.parse(req.params);
+    const validated = schema.parse(req.params);
+    req.params = validated;
     next();
   } catch (err) {
-    next(new AppError("Invalid parameters", 400));
+    if (err instanceof ZodError) {
+      return res.status(400).json({
+        success: false,
+        message: "Validation error",
+        errors: err.errors.map((e) => ({
+          field: e.path.join("."),
+          message: e.message,
+        })),
+      });
+    }
+    next(new AppError("Param validation error."));
   }
 };
 
-module.exports = { validate, validateParams };
+const validateQuery = (schema) => (req, res, next) => {
+  try {
+    req.query = schema.parse(req.query);
+    next();
+  } catch (err) {
+    next(new AppError("Invalid query parameters", 400));
+  }
+};
+
+module.exports = { validate, validateParams, validateQuery };

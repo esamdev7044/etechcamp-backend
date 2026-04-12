@@ -6,7 +6,9 @@ exports.authorize = (...roles) => {
       return next(new AppError("Unauthorized", 401));
     }
 
-    if (!roles.includes(req.user.role)) {
+    if (
+      !roles.map((r) => r.toLowerCase()).includes(req.user.role?.toLowerCase())
+    ) {
       return next(new AppError("Forbidden", 403));
     }
 
